@@ -63,21 +63,21 @@ def test_record_sync_failure_increments_attempts(tmp_path):
     assert failed.last_sync_error == "timeout"
 
 
-def test_purge_older_than_deletes_old_marks(tmp_path):
+def test_retention_keeps_three_months_and_deletes_older_marks(tmp_path):
     store = RawStore(tmp_path / "raw.sqlite3")
     old_mark = store.add_mark(
         tag_uid="OLD",
         worker_id=None,
         device_id="raspberry-1",
         obra="OBRA DEMO",
-        marked_at=datetime.now(UTC) - timedelta(days=100),
+        marked_at=datetime.now(UTC) - timedelta(days=91),
     )
     new_mark = store.add_mark(
         tag_uid="NEW",
         worker_id=None,
         device_id="raspberry-1",
         obra="OBRA DEMO",
-        marked_at=datetime.now(UTC),
+        marked_at=datetime.now(UTC) - timedelta(days=30),
     )
 
     deleted = store.purge_older_than(retention_days=90)

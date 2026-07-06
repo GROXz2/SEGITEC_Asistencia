@@ -1,4 +1,4 @@
-"""Initial console-simulated RFID flow for Raspberry Pi."""
+"""Console-simulated RFID flow for local PC and Raspberry development."""
 
 from __future__ import annotations
 
@@ -9,8 +9,12 @@ from typing import Any
 import yaml
 
 from raspberry.raw_store import RawStore
-from raspberry.sync_service import GoogleAppsScriptSyncClient, NoopSyncClient, sync_pending_marks
+from raspberry.rfid import normalize_uid
+from raspberry.sync_service import build_sync_client, sync_pending_marks
 from raspberry.workers_cache import WorkersCache
+
+
+SUPPORTED_RFID_MODES = {"simulated", "simulated_console"}
 
 
 def load_config(path: str | Path) -> dict[str, Any]:
@@ -18,52 +22,82 @@ def load_config(path: str | Path) -> dict[str, Any]:
         return yaml.safe_load(config_file) or {}
 
 
-def build_sync_client(config: dict[str, Any]):
-    sync_config = config.get("sync", {})
-    url = sync_config.get("google_apps_script_url", "")
-    if not url or "REEMPLAZAR" in url:
-        return NoopSyncClient()
-    return GoogleAppsScriptSyncClient(
-        url,
-        timeout_seconds=int(sync_config.get("timeout_seconds", 10)),
+def _build_sync_client_from_config(config: dict[str, Any]):
+    google_config = config.get("google", {})
+    legacy_sync_config = config.get("sync", {})
+    return build_sync_client(
+        enabled=bool(google_config.get("enabled", False)),
+        api_url=str(google_config.get("api_url") or legacy_sync_config.get("google_apps_script_url") or ""),
+        timeout_seconds=int(google_config.get("timeout_seconds", legacy_sync_config.get("timeout_seconds", 10))),
     )
+
+
+def process_simulated_uid(
+    *,
+    uid: str,
+    raw_store: RawStore,
+    workers_cache: WorkersCache,
+    sync_client,
+    device_id: str,
+    obra: str,
+) -> tuple[int, int, str]:
+    """Normalize, store, and try to sync one simulated RFID/NFC UID."""
+
+    tag_uid = normalize_uid(uid)
+    worker = workers_cache.get_by_tag(tag_uid)
+    raw_mark = raw_store.add_mark(
+        tag_uid=tag_uid,
+        worker_id=worker.id if worker else None,
+        device_id=device_id,
+        obra=obra,
+    )
+    synced = sync_pending_marks(raw_store, sync_client)
+    worker_label = worker.name if worker else "TAG NO REGISTRADO"
+    return raw_mark.id, synced, worker_label
 
 
 def run(config_path: str | Path) -> None:
     config = load_config(config_path)
     device = config.get("device", {})
     storage = config.get("storage", {})
+    rfid = config.get("rfid", {})
+
+    rfid_mode = rfid.get("mode", "simulated")
+    if rfid_mode not in SUPPORTED_RFID_MODES:
+        raise ValueError("En esta etapa solo está disponible rfid.mode=simulated")
 
     device_id = device.get("id", "raspberry-unknown")
     obra = device.get("obra", "OBRA SIN CONFIGURAR")
-    raw_store = RawStore(storage.get("raw_db_path", "data/raw_marks.sqlite3"))
-    workers_cache = WorkersCache(storage.get("workers_cache_path", "data/workers_cache.json"))
-    sync_client = build_sync_client(config)
+    raw_store = RawStore(storage.get("raw_db_path", "data/segitec_asistencia.db"))
+    workers_cache = WorkersCache(storage.get("workers_cache_path", "data/workers_demo.json"))
+    sync_client = _build_sync_client_from_config(config)
 
     retention_days = int(storage.get("raw_retention_days", 90))
     raw_store.purge_older_than(retention_days=retention_days)
 
-    print("SEGITEC asistencia RFID - modo simulado")
+    print("SEGITEC asistencia RFID - modo simulated")
     print("Ingrese UID RFID/NFC y presione Enter. Escriba 'salir' para terminar.")
 
     while True:
-        tag_uid = input("RFID UID> ").strip()
-        if tag_uid.lower() in {"salir", "exit", "quit"}:
+        typed_uid = input("RFID UID> ").strip()
+        if typed_uid.lower() in {"salir", "exit", "quit"}:
             break
-        if not tag_uid:
+        if not typed_uid:
             continue
 
-        worker = workers_cache.get_by_tag(tag_uid)
-        raw_mark = raw_store.add_mark(
-            tag_uid=tag_uid,
-            worker_id=worker.id if worker else None,
-            device_id=device_id,
-            obra=obra,
-        )
-        worker_label = worker.name if worker else "TAG NO REGISTRADO"
-        print(f"Marca RAW guardada #{raw_mark.id}: {worker_label} ({tag_uid})")
-
-        synced = sync_pending_marks(raw_store, sync_client)
+        try:
+            mark_id, synced, worker_label = process_simulated_uid(
+                uid=typed_uid,
+                raw_store=raw_store,
+                workers_cache=workers_cache,
+                sync_client=sync_client,
+                device_id=device_id,
+                obra=obra,
+            )
+        except ValueError as exc:
+            print(f"UID inválido: {exc}")
+            continue
+        print(f"Marca RAW guardada #{mark_id}: {worker_label} ({normalize_uid(typed_uid)})")
         print(f"Sincronización intentada. Marcas sincronizadas: {synced}")
 
 

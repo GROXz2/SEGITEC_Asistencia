@@ -3,5 +3,8 @@ __pycache__/
 .pytest_cache/
 .venv/
 venv/
-data/
 config.yaml
+
+data/*
+!data/.gitkeep
+!data/workers_demo.json

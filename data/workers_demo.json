@@ -1,0 +1,22 @@
+{
+  "workers": [
+    {
+      "id": "demo-001",
+      "name": "Trabajador Demo Uno",
+      "tag_uid": "04AABBCCDD",
+      "active": true
+    },
+    {
+      "id": "demo-002",
+      "name": "Trabajadora Demo Dos",
+      "tag_uid": "04DDEEFF00",
+      "active": true
+    },
+    {
+      "id": "demo-003",
+      "name": "Trabajador Demo Inactivo",
+      "tag_uid": "0411223344",
+      "active": false
+    }
+  ]
+}

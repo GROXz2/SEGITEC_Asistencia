@@ -1,4 +1,4 @@
-"""Synchronization placeholders for Google Apps Script."""
+"""Synchronization clients for Google Apps Script."""
 
 from __future__ import annotations
 
@@ -16,12 +16,7 @@ class SyncClient(Protocol):
 
 
 class GoogleAppsScriptSyncClient:
-    """Minimal Google Apps Script HTTP client.
-
-    The Apps Script endpoint contract will be completed in a later stage. For
-    now this client posts the RAW mark as JSON and expects a successful HTTP
-    status code.
-    """
+    """HTTP client that posts RAW marks to a Google Apps Script endpoint."""
 
     def __init__(self, url: str, *, timeout_seconds: int = 10) -> None:
         self.url = url
@@ -36,11 +31,21 @@ class GoogleAppsScriptSyncClient:
         response.raise_for_status()
 
 
-class NoopSyncClient:
-    """Development client that accepts marks without network access."""
+class DryRunSyncClient:
+    """Client used when Google sync is disabled; it never marks rows as synced."""
 
     def send_mark(self, mark: RawMark) -> None:
-        return None
+        raise RuntimeError("google.enabled=false; marca queda pendiente en modo dry-run")
+
+
+def build_sync_client(*, enabled: bool, api_url: str, timeout_seconds: int = 10) -> SyncClient:
+    """Build the configured sync client."""
+
+    if not enabled:
+        return DryRunSyncClient()
+    if not api_url:
+        raise ValueError("google.api_url es obligatorio cuando google.enabled=true")
+    return GoogleAppsScriptSyncClient(api_url, timeout_seconds=timeout_seconds)
 
 
 def sync_pending_marks(raw_store: RawStore, client: SyncClient, *, limit: int = 100) -> int:
