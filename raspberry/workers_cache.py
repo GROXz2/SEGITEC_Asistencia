@@ -1,10 +1,12 @@
-"""Local worker cache keyed by RFID/NFC tag UID."""
+"""Local worker cache keyed by normalized RFID/NFC tag UID."""
 
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, asdict
+from dataclasses import asdict, dataclass
 from pathlib import Path
+
+from raspberry.rfid import normalize_uid
 
 
 @dataclass(frozen=True)
@@ -30,7 +32,7 @@ class WorkersCache:
             return
         payload = json.loads(self.path.read_text(encoding="utf-8"))
         workers = [Worker(**item) for item in payload.get("workers", [])]
-        self._workers_by_tag = {worker.tag_uid: worker for worker in workers}
+        self._workers_by_tag = {normalize_uid(worker.tag_uid): worker for worker in workers}
 
     def save(self) -> None:
         workers = [asdict(worker) for worker in self._workers_by_tag.values()]
@@ -40,10 +42,16 @@ class WorkersCache:
         )
 
     def get_by_tag(self, tag_uid: str) -> Worker | None:
-        worker = self._workers_by_tag.get(tag_uid)
+        worker = self._workers_by_tag.get(normalize_uid(tag_uid))
         if worker is None or not worker.active:
             return None
         return worker
 
     def upsert(self, worker: Worker) -> None:
-        self._workers_by_tag[worker.tag_uid] = worker
+        normalized_uid = normalize_uid(worker.tag_uid)
+        self._workers_by_tag[normalized_uid] = Worker(
+            id=worker.id,
+            name=worker.name,
+            tag_uid=normalized_uid,
+            active=worker.active,
+        )
