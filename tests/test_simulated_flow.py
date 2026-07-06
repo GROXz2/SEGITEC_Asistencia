@@ -3,7 +3,7 @@ from __future__ import annotations
 from threading import Thread
 
 from tools.fake_apps_script_server import FakeAppsScriptHandler, ThreadingHTTPServer
-from raspberry.main import process_simulated_uid
+from raspberry.main import process_simulated_uid, run
 from raspberry.raw_store import RawStore
 from raspberry.rfid import normalize_uid
 from raspberry.sync_service import DryRunSyncClient, GoogleAppsScriptSyncClient, sync_pending_marks
@@ -80,3 +80,38 @@ def test_sync_mark_against_fake_apps_script_server(tmp_path):
         server.shutdown()
         server.server_close()
         thread.join(timeout=2)
+
+
+def test_run_with_simulate_tag_saves_one_mark_and_exits(tmp_path, capsys):
+    config_path = tmp_path / "config.yaml"
+    db_path = tmp_path / "raw.sqlite3"
+    workers_path = tmp_path / "workers.json"
+    workers = WorkersCache(workers_path)
+    workers.upsert(Worker(id="demo-001", name="Trabajador Demo", tag_uid="04:aa:bb:cc:dd"))
+    workers.save()
+    config_path.write_text(
+        f"""
+device:
+  id: "pc-test"
+  obra: "OBRA DEMO"
+storage:
+  raw_db_path: "{db_path}"
+  workers_cache_path: "{workers_path}"
+  raw_retention_days: 90
+google:
+  enabled: false
+rfid:
+  mode: "simulated"
+""",
+        encoding="utf-8",
+    )
+
+    run(config_path, simulate_tag="04-aa-bb-cc-dd")
+
+    output = capsys.readouterr().out
+    store = RawStore(db_path)
+    marks = store.list_marks()
+    assert len(marks) == 1
+    assert marks[0].tag_uid == "04AABBCCDD"
+    assert marks[0].row_hash
+    assert "Marca RAW guardada #1" in output

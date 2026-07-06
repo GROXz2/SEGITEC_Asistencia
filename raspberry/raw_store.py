@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import sqlite3
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -23,6 +24,8 @@ class RawMark:
     sync_attempts: int
     last_sync_error: str | None
     created_at: str
+    row_hash: str
+    previous_hash: str | None
 
 
 class RawStore:
@@ -52,16 +55,26 @@ class RawStore:
                     synced INTEGER NOT NULL DEFAULT 0,
                     sync_attempts INTEGER NOT NULL DEFAULT 0,
                     last_sync_error TEXT,
-                    created_at TEXT NOT NULL
+                    created_at TEXT NOT NULL,
+                    row_hash TEXT,
+                    previous_hash TEXT
                 )
                 """
             )
+            self._ensure_hash_columns(connection)
             connection.execute(
                 """
                 CREATE INDEX IF NOT EXISTS idx_raw_marks_pending
                 ON raw_marks (synced, id)
                 """
             )
+
+    def _ensure_hash_columns(self, connection: sqlite3.Connection) -> None:
+        columns = {row["name"] for row in connection.execute("PRAGMA table_info(raw_marks)")}
+        if "row_hash" not in columns:
+            connection.execute("ALTER TABLE raw_marks ADD COLUMN row_hash TEXT")
+        if "previous_hash" not in columns:
+            connection.execute("ALTER TABLE raw_marks ADD COLUMN previous_hash TEXT")
 
     def add_mark(
         self,
@@ -76,23 +89,41 @@ class RawStore:
 
         now = datetime.now(UTC)
         effective_marked_at = marked_at or now
+        marked_at_iso = _to_iso(effective_marked_at)
+        created_at_iso = _to_iso(now)
         with self._connect() as connection:
+            previous_hash = self._get_latest_row_hash(connection)
             cursor = connection.execute(
                 """
                 INSERT INTO raw_marks (
-                    tag_uid, worker_id, device_id, obra, marked_at, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?)
+                    tag_uid, worker_id, device_id, obra, marked_at, created_at, previous_hash
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     tag_uid,
                     worker_id,
                     device_id,
                     obra,
-                    _to_iso(effective_marked_at),
-                    _to_iso(now),
+                    marked_at_iso,
+                    created_at_iso,
+                    previous_hash,
                 ),
             )
             mark_id = int(cursor.lastrowid)
+            row_hash = _calculate_row_hash(
+                id=mark_id,
+                tag_uid=tag_uid,
+                worker_id=worker_id,
+                device_id=device_id,
+                obra=obra,
+                marked_at=marked_at_iso,
+                created_at=created_at_iso,
+                previous_hash=previous_hash,
+            )
+            connection.execute(
+                "UPDATE raw_marks SET row_hash = ? WHERE id = ?",
+                (row_hash, mark_id),
+            )
         return self.get_mark(mark_id)
 
     def get_mark(self, mark_id: int) -> RawMark:
@@ -106,6 +137,16 @@ class RawStore:
         if row is None:
             raise KeyError(f"RAW mark not found: {mark_id}")
         return _row_to_mark(row)
+
+    def list_marks(self, *, limit: int = 100) -> list[RawMark]:
+        """Return RAW marks ordered by insertion id."""
+
+        with self._connect() as connection:
+            rows = connection.execute(
+                "SELECT * FROM raw_marks ORDER BY id ASC LIMIT ?",
+                (limit,),
+            ).fetchall()
+        return [_row_to_mark(row) for row in rows]
 
     def list_pending(self, *, limit: int = 100) -> list[RawMark]:
         """Return unsynchronized marks ordered by insertion id."""
@@ -154,11 +195,67 @@ class RawStore:
             )
             return int(cursor.rowcount)
 
+    def validate_hash_chain(self) -> tuple[bool, str | None]:
+        """Validate the RAW hash chain and return (is_valid, error_message)."""
+
+        previous_hash: str | None = None
+        for mark in self.list_marks(limit=1_000_000):
+            if mark.previous_hash != previous_hash:
+                return False, f"Marca #{mark.id} apunta a previous_hash inválido"
+            expected_hash = _calculate_row_hash(
+                id=mark.id,
+                tag_uid=mark.tag_uid,
+                worker_id=mark.worker_id,
+                device_id=mark.device_id,
+                obra=mark.obra,
+                marked_at=mark.marked_at,
+                created_at=mark.created_at,
+                previous_hash=mark.previous_hash,
+            )
+            if mark.row_hash != expected_hash:
+                return False, f"Marca #{mark.id} tiene row_hash inválido"
+            previous_hash = mark.row_hash
+        return True, None
+
+    def _get_latest_row_hash(self, connection: sqlite3.Connection) -> str | None:
+        row = connection.execute(
+            "SELECT row_hash FROM raw_marks ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        if row is None:
+            return None
+        return row["row_hash"]
+
 
 def _to_iso(value: datetime) -> str:
     if value.tzinfo is None:
         value = value.replace(tzinfo=UTC)
     return value.astimezone(UTC).isoformat()
+
+
+def _calculate_row_hash(
+    *,
+    id: int,
+    tag_uid: str,
+    worker_id: str | None,
+    device_id: str,
+    obra: str,
+    marked_at: str,
+    created_at: str,
+    previous_hash: str | None,
+) -> str:
+    canonical = "|".join(
+        [
+            str(id),
+            tag_uid,
+            worker_id or "",
+            device_id,
+            obra,
+            marked_at,
+            created_at,
+            previous_hash or "",
+        ]
+    )
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
 def _row_to_mark(row: sqlite3.Row | dict[str, Any]) -> RawMark:
@@ -173,4 +270,6 @@ def _row_to_mark(row: sqlite3.Row | dict[str, Any]) -> RawMark:
         sync_attempts=int(row["sync_attempts"]),
         last_sync_error=row["last_sync_error"],
         created_at=str(row["created_at"]),
+        row_hash=str(row["row_hash"] or ""),
+        previous_hash=row["previous_hash"],
     )
