@@ -55,6 +55,7 @@ data/
 
 tools/
   fake_apps_script_server.py  # Servidor HTTP local que simula Google Apps Script
+  inspect_db.py              # Inspector Python de RAW SQLite sin sqlite3 CLI
 
 tests/
   test_raw_store.py
@@ -106,7 +107,7 @@ pytest
 
 ## Ejecutar una marca simulada sin Google
 
-Deja `google.enabled: false` en `config.yaml` y ejecuta:
+Deja `google.enabled: false` en `config.yaml` y ejecuta el modo interactivo:
 
 ```bash
 python -m raspberry.main --config config.yaml
@@ -116,6 +117,18 @@ Luego ingresa un UID, por ejemplo:
 
 ```text
 RFID UID> 04:AA:BB:CC:DD
+```
+
+Para pruebas rápidas desde PC también puedes registrar una sola marca y salir automáticamente con `--simulate-tag`:
+
+```bash
+python -m raspberry.main --config config.yaml --simulate-tag 04:AA:BB:CC:DD
+```
+
+En Windows PowerShell:
+
+```powershell
+python -m raspberry.main --config config.yaml --simulate-tag 04:AA:BB:CC:DD
 ```
 
 La marca se guarda primero en `data/segitec_asistencia.db`, no se intenta conectar a Google y queda pendiente con un error dry-run controlado.
@@ -153,14 +166,38 @@ La base local se crea automáticamente en:
 data/segitec_asistencia.db
 ```
 
-Con `sqlite3` instalado, puedes inspeccionarla así:
+No necesitas instalar el ejecutable `sqlite3`. El proyecto incluye un inspector Python:
 
 ```bash
-sqlite3 data/segitec_asistencia.db "SELECT id, tag_uid, worker_id, obra, marked_at, synced, sync_attempts, last_sync_error FROM raw_marks ORDER BY id;"
+python tools/inspect_db.py --db data/segitec_asistencia.db
+```
+
+En Windows PowerShell:
+
+```powershell
+python tools/inspect_db.py --db data/segitec_asistencia.db
 ```
 
 Para ver solo pendientes:
 
 ```bash
-sqlite3 data/segitec_asistencia.db "SELECT id, tag_uid, marked_at, sync_attempts, last_sync_error FROM raw_marks WHERE synced = 0 ORDER BY id;"
+python tools/inspect_db.py --db data/segitec_asistencia.db --pending-only
+```
+
+En Windows PowerShell:
+
+```powershell
+python tools/inspect_db.py --db data/segitec_asistencia.db --pending-only
+```
+
+Para validar la cadena de integridad RAW (`previous_hash` -> `row_hash`):
+
+```bash
+python tools/inspect_db.py --db data/segitec_asistencia.db --validate-chain
+```
+
+En Windows PowerShell:
+
+```powershell
+python tools/inspect_db.py --db data/segitec_asistencia.db --validate-chain
 ```

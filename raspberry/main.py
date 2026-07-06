@@ -56,7 +56,7 @@ def process_simulated_uid(
     return raw_mark.id, synced, worker_label
 
 
-def run(config_path: str | Path) -> None:
+def run(config_path: str | Path, simulate_tag: str | None = None) -> None:
     config = load_config(config_path)
     device = config.get("device", {})
     storage = config.get("storage", {})
@@ -76,6 +76,20 @@ def run(config_path: str | Path) -> None:
     raw_store.purge_older_than(retention_days=retention_days)
 
     print("SEGITEC asistencia RFID - modo simulated")
+
+    if simulate_tag is not None:
+        mark_id, synced, worker_label = process_simulated_uid(
+            uid=simulate_tag,
+            raw_store=raw_store,
+            workers_cache=workers_cache,
+            sync_client=sync_client,
+            device_id=device_id,
+            obra=obra,
+        )
+        print(f"Marca RAW guardada #{mark_id}: {worker_label} ({normalize_uid(simulate_tag)})")
+        print(f"Sincronización intentada. Marcas sincronizadas: {synced}")
+        return
+
     print("Ingrese UID RFID/NFC y presione Enter. Escriba 'salir' para terminar.")
 
     while True:
@@ -108,9 +122,13 @@ def parse_args() -> argparse.Namespace:
         default="config.yaml",
         help="Ruta al archivo YAML de configuración",
     )
+    parser.add_argument(
+        "--simulate-tag",
+        help="UID RFID/NFC para registrar una marca directa sin modo interactivo",
+    )
     return parser.parse_args()
 
 
 if __name__ == "__main__":
     args = parse_args()
-    run(args.config)
+    run(args.config, simulate_tag=args.simulate_tag)

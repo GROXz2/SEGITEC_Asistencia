@@ -92,3 +92,55 @@ def test_retention_keeps_three_months_and_deletes_older_marks(tmp_path):
         pass
     else:
         raise AssertionError("old mark should have been purged")
+
+
+def test_new_marks_have_row_hash_and_are_chained(tmp_path):
+    store = RawStore(tmp_path / "raw.sqlite3")
+
+    first = store.add_mark(
+        tag_uid="TAG-1",
+        worker_id=None,
+        device_id="raspberry-1",
+        obra="OBRA DEMO",
+    )
+    second = store.add_mark(
+        tag_uid="TAG-2",
+        worker_id=None,
+        device_id="raspberry-1",
+        obra="OBRA DEMO",
+    )
+
+    assert first.row_hash
+    assert second.row_hash
+    assert second.previous_hash == first.row_hash
+    assert store.validate_hash_chain() == (True, None)
+
+
+def test_hash_chain_validation_detects_tampered_row(tmp_path):
+    import sqlite3
+
+    db_path = tmp_path / "raw.sqlite3"
+    store = RawStore(db_path)
+    first = store.add_mark(
+        tag_uid="TAG-1",
+        worker_id=None,
+        device_id="raspberry-1",
+        obra="OBRA DEMO",
+    )
+    store.add_mark(
+        tag_uid="TAG-2",
+        worker_id=None,
+        device_id="raspberry-1",
+        obra="OBRA DEMO",
+    )
+
+    with sqlite3.connect(db_path) as connection:
+        connection.execute(
+            "UPDATE raw_marks SET tag_uid = ? WHERE id = ?",
+            ("TAG-ALTERADO", first.id),
+        )
+
+    is_valid, error = store.validate_hash_chain()
+
+    assert is_valid is False
+    assert error == f"Marca #{first.id} tiene row_hash inválido"
