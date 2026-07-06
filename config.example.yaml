@@ -1,0 +1,15 @@
+device:
+  id: "raspberry-obra-demo-01"
+  obra: "OBRA DEMO"
+
+storage:
+  raw_db_path: "data/raw_marks.sqlite3"
+  workers_cache_path: "data/workers_cache.json"
+  raw_retention_days: 90
+
+sync:
+  google_apps_script_url: "https://script.google.com/macros/s/REEMPLAZAR/exec"
+  timeout_seconds: 10
+
+rfid:
+  mode: "simulated_console"
