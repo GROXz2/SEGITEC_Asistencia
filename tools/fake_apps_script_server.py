@@ -22,6 +22,7 @@ class FakeAppsScriptHandler(BaseHTTPRequestHandler):
             return
 
         FakeAppsScriptHandler.received_marks.append(payload)
+        print(f"fake-apps-script payload recibido: {json.dumps(payload, ensure_ascii=False, sort_keys=True)}")
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
         self.end_headers()

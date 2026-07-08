@@ -18,7 +18,7 @@ Registrar marcas de entrada/salida en obra mediante tags RFID/NFC asociados a la
 - Cada marca se guarda primero como RAW local antes de intentar sincronizar.
 - Sincronización operativa futura: Google Sheets mediante Google Apps Script.
 - Si `google.enabled=false`, no se llama a Google y las marcas quedan pendientes en modo dry-run.
-- Si `google.enabled=true`, el sistema intenta enviar cada marca pendiente a `google.api_url`.
+- Si `google.enabled=true`, el sistema intenta enviar cada marca pendiente a `google.api_url` usando `google.api_key`.
 - Respaldo local RAW: conservación de 3 meses, configurada como `raw_retention_days: 90`.
 - RAW local: no editable desde la interfaz normal.
 
@@ -99,6 +99,16 @@ En Windows PowerShell:
 Copy-Item config.example.yaml config.yaml
 ```
 
+En `config.yaml`, la sección Google debe incluir URL, clave y timeout. Para pruebas locales puedes dejar Google desactivado:
+
+```yaml
+google:
+  enabled: false
+  api_url: "http://127.0.0.1:8000/exec"
+  api_key: "TEST_SECRET"
+  timeout_seconds: 10
+```
+
 ## Ejecutar tests
 
 ```bash
@@ -147,6 +157,7 @@ En otra terminal, edita `config.yaml`:
 google:
   enabled: true
   api_url: "http://127.0.0.1:8000/exec"
+  api_key: "TEST_SECRET"
   timeout_seconds: 10
 ```
 
@@ -201,6 +212,29 @@ En Windows PowerShell:
 ```powershell
 python tools/inspect_db.py --db data/segitec_asistencia.db --validate-chain
 ```
+
+## Prueba contra Google Apps Script real desde PC
+
+1. Despliega `google_apps_script/Code.gs` como Web App en Google Apps Script.
+2. Copia la URL `/exec` del despliegue en `google.api_url`.
+3. Configura en `google.api_key` la misma clave esperada por `verifyApiKey_()` en el Apps Script real.
+4. Activa la sincronización en `config.yaml`:
+
+```yaml
+google:
+  enabled: true
+  api_url: "https://script.google.com/macros/s/TU_DEPLOYMENT_ID/exec"
+  api_key: "TEST_SECRET"
+  timeout_seconds: 10
+```
+
+Luego registra una marca simulada desde el PC:
+
+```bash
+python -m raspberry.main --config config.yaml --simulate-tag 04:AA:BB:CC:DD
+```
+
+La marca se guardará primero en RAW local SQLite y luego el cliente enviará a Google Apps Script un JSON con `api_key`, `type: raw_mark` y el `payload` de la marca. Si falla internet o Google responde con error, la marca queda pendiente para reintentar sincronización.
 
 ## Siguiente etapa: Google Apps Script real
 
