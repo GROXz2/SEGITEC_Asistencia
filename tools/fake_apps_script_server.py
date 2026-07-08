@@ -26,6 +26,9 @@ class FakeAppsScriptHandler(BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
         self.end_headers()
+        if payload.get("api_key") == "BAD_SECRET":
+            self.wfile.write(json.dumps({"ok": False, "error": "invalid api_key"}).encode("utf-8"))
+            return
         self.wfile.write(json.dumps({"ok": True, "received": len(FakeAppsScriptHandler.received_marks)}).encode("utf-8"))
 
     def log_message(self, format: str, *args) -> None:  # noqa: A002 - inherited signature.

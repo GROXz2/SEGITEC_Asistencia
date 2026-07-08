@@ -30,6 +30,17 @@ class GoogleAppsScriptSyncClient:
             timeout=self.timeout_seconds,
         )
         response.raise_for_status()
+        try:
+            result = response.json()
+        except ValueError as exc:
+            raise RuntimeError("Google Apps Script respondió con contenido que no es JSON válido") from exc
+
+        if not isinstance(result, dict):
+            raise RuntimeError("Google Apps Script respondió JSON válido, pero no es un objeto")
+
+        if result.get("ok") is not True:
+            error = result.get("error") or "respuesta sin ok=true"
+            raise RuntimeError(f"Google Apps Script rechazó la marca: {error}")
 
 
 class DryRunSyncClient:
