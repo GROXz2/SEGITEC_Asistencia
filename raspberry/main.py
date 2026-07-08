@@ -28,6 +28,7 @@ def _build_sync_client_from_config(config: dict[str, Any]):
     return build_sync_client(
         enabled=bool(google_config.get("enabled", False)),
         api_url=str(google_config.get("api_url") or legacy_sync_config.get("google_apps_script_url") or ""),
+        api_key=str(google_config.get("api_key") or legacy_sync_config.get("api_key") or ""),
         timeout_seconds=int(google_config.get("timeout_seconds", legacy_sync_config.get("timeout_seconds", 10))),
     )
 

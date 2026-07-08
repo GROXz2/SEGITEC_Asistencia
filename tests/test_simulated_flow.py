@@ -3,10 +3,10 @@ from __future__ import annotations
 from threading import Thread
 
 from tools.fake_apps_script_server import FakeAppsScriptHandler, ThreadingHTTPServer
-from raspberry.main import process_simulated_uid, run
+from raspberry.main import _build_sync_client_from_config, process_simulated_uid, run
 from raspberry.raw_store import RawStore
 from raspberry.rfid import normalize_uid
-from raspberry.sync_service import DryRunSyncClient, GoogleAppsScriptSyncClient, sync_pending_marks
+from raspberry.sync_service import DryRunSyncClient, GoogleAppsScriptSyncClient, build_sync_client, sync_pending_marks
 from raspberry.workers_cache import Worker, WorkersCache
 
 
@@ -69,17 +69,43 @@ def test_sync_mark_against_fake_apps_script_server(tmp_path):
             device_id="pc-test",
             obra="OBRA DEMO",
         )
-        client = GoogleAppsScriptSyncClient(f"http://127.0.0.1:{port}/exec", timeout_seconds=2)
+        client = GoogleAppsScriptSyncClient(f"http://127.0.0.1:{port}/exec", "TEST_SECRET", timeout_seconds=2)
 
         synced = sync_pending_marks(store, client)
 
         assert synced == 1
         assert store.get_mark(mark.id).synced is True
+        assert FakeAppsScriptHandler.received_marks[0]["api_key"] == "TEST_SECRET"
+        assert FakeAppsScriptHandler.received_marks[0]["type"] == "raw_mark"
         assert FakeAppsScriptHandler.received_marks[0]["payload"]["tag_uid"] == "04AABBCCDD"
     finally:
         server.shutdown()
         server.server_close()
         thread.join(timeout=2)
+
+
+def test_google_sync_requires_api_key_when_enabled():
+    try:
+        build_sync_client(enabled=True, api_url="http://127.0.0.1:8000/exec", api_key="")
+    except ValueError as exc:
+        assert "google.api_key es obligatorio" in str(exc)
+    else:
+        raise AssertionError("Expected missing google.api_key to raise ValueError")
+
+
+def test_build_sync_client_from_config_reads_api_key():
+    client = _build_sync_client_from_config(
+        {
+            "google": {
+                "enabled": True,
+                "api_url": "http://127.0.0.1:8000/exec",
+                "api_key": "CONFIG_SECRET",
+            }
+        }
+    )
+
+    assert isinstance(client, GoogleAppsScriptSyncClient)
+    assert client.api_key == "CONFIG_SECRET"
 
 
 def test_run_with_simulate_tag_saves_one_mark_and_exits(tmp_path, capsys):
