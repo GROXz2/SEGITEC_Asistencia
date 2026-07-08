@@ -167,7 +167,25 @@ Luego ejecuta el simulador:
 python -m raspberry.main --config config.yaml
 ```
 
-Cada UID ingresado se guardará como RAW local y luego se enviará al servidor falso.
+Cada UID ingresado se guardará como RAW local y luego se enviará al servidor falso. Una marca solo se marca como sincronizada en SQLite cuando Google Apps Script responde con JSON válido y `{"ok": true}`. Si Google responde HTTP 200 pero con `{"ok": false, "error": "..."}` o con contenido que no es JSON, la marca queda pendiente y se registra el error en `last_sync_error`.
+
+Para verificar el rechazo de credenciales antes de probar contra Apps Script real, usa el servidor falso y configura temporalmente una clave mala:
+
+```yaml
+google:
+  enabled: true
+  api_url: "http://127.0.0.1:8000/exec"
+  api_key: "BAD_SECRET"
+  timeout_seconds: 10
+```
+
+Luego ejecuta una marca de prueba:
+
+```bash
+python -m raspberry.main --config config.yaml --simulate-tag 04:AA:BB:CC:DD
+```
+
+El servidor falso devolverá HTTP 200 con `{"ok": false, "error": "invalid api_key"}` y la marca debe permanecer pendiente en RAW local.
 
 ## Revisar la base SQLite
 
