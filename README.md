@@ -201,3 +201,17 @@ En Windows PowerShell:
 ```powershell
 python tools/inspect_db.py --db data/segitec_asistencia.db --validate-chain
 ```
+
+## Siguiente etapa: Google Apps Script real
+
+La carpeta `google_apps_script/` contiene la primera API mínima para recibir marcas RAW reales en Google Sheets mediante Google Apps Script.
+
+Incluye:
+
+- `Code.gs` con endpoints `doPost(e)` y `doGet(e)`.
+- Escritura de marcas en `MARCAS_RAW_SYNC`.
+- Actualización de heartbeat en `ESTADO_EQUIPO`.
+- Lectura básica de `CONFIG` y `TRABAJADORES`.
+- Ejemplos de payload en `google_apps_script/sample_payloads.md`.
+
+Esta etapa todavía no implementa creación mensual automática, resumen mensual de horas, PN532 real, pantalla, buzzer ni servicio `systemd` en Raspberry Pi.
